@@ -50,6 +50,8 @@ test_set = (
 
 with open(os.path.join(pro, 'train.pt'), 'wb') as f:
     torch.save(training_set, f)
+    '''only torch.load can retrieve the variable, cause the return type are the same 
+    '''
 with open(os.path.join(pro, 'test.pt'), 'wb') as f:
     torch.save(test_set, f)
 
