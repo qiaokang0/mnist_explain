@@ -6,7 +6,19 @@ import codecs
 
 def get_int(b):
     return int(codecs.encode(b, 'hex'), 16)
+
 def read_image_file(path):
+    '''
+    comment like this would follow the indent rule
+    # mnist file is a binary file , and the format explanation is on the official web.(with a simple header and hex for the gray shade)
+    This func transform the binary file to a variable!
+    keyword:
+    f.read()
+    int(codecs.encode(b, 'hex'), 16)
+    numpy.frombuffer
+    torch.from_numpy
+    view
+    '''
     with open(path, 'rb') as f:
         data = f.read()
         assert get_int(data[:4]) == 2051
@@ -45,5 +57,5 @@ data, targets = torch.load(os.path.join(pro, 'train.pt'))
 print(len(data))
 print(len(targets))
 print('end1')
-print(len(training_set[1]))
+print(type(training_set[1]))
 print('end2')
