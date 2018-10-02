@@ -1,63 +1,127 @@
-import torch
+from __future__ import print_function
 import os
-import numpy as np
-import codecs
+os.environ['CUDA_VISIBLE_DEVICES'] = r'0,1'
+print(os.environ['CUDA_VISIBLE_DEVICES'] ,'must do before import torch or in terminal')
+# must do that before import torch!!!!
+import argparse
+import torch
+
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torchvision import datasets, transforms
+
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
+        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
+        self.conv2_drop = nn.Dropout2d()
+        self.fc1 = nn.Linear(320, 50)
+        self.fc2 = nn.Linear(50, 10)
+
+    def forward(self, x):
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = x.view(-1, 320)
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, training=self.training)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+def train(args, model,device, train_loader, optimizer, epoch):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        #data, target = data.to(device), target.to(device)
+        data = data.cuda()
+        target = target.cuda()
+        optimizer.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
+
+def test(args,model, device,test_loader):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data = data.cuda()
+            target = target.cuda()
+            #data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += F.nll_loss(output, target).item() # sum up batch loss
+            pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+            correct += pred.eq(target.view_as(pred)).sum().item()
+
+    test_loss /= len(test_loader.dataset)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
+def main():
+    # Training settings
+    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+                        help='input batch size for training (default: 64)')
+    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+                        help='input batch size for testing (default: 1000)')
+    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+                        help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+                        help='learning rate (default: 0.01)')
+    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
+                        help='SGD momentum (default: 0.5)')
+    parser.add_argument('--no-cuda', action='store_true', default=False,
+                        help='disables CUDA training')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                        help='how many batches to wait before logging training status')
+    args = parser.parse_args()
+    use_cuda = not args.no_cuda and torch.cuda.is_available()
+
+    # os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+
+    # print(CUDA_VISIBLE_DEVICES)
+
+    
+
+    torch.manual_seed(args.seed)
+
+    # device = torch.device("cuda" if use_cuda else "cpu")
+    device=1
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    train_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
+
+    test_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=False, transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+
+    # model=nn.DataParallel(Net()).cuda() # these two are the same
+    model=nn.DataParallel(Net().cuda())
+    # model.to(device)
+    # model=Net().to(device)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+
+    for epoch in range(1, args.epochs + 1):
+        train(args, model, device, train_loader, optimizer, epoch)
+        test(args, model, device, test_loader)
 
 
-def get_int(b):
-    return int(codecs.encode(b, 'hex'), 16)
-
-def read_image_file(path):
-    '''
-    comment like this would follow the indent rule
-    # mnist file is a binary file , and the format explanation is on the official web.(with a simple header and hex for the gray shade)
-    This func transform the binary file to a variable!
-    keyword:
-    f.read()
-    int(codecs.encode(b, 'hex'), 16)
-    numpy.frombuffer
-    torch.from_numpy
-    view
-    '''
-    with open(path, 'rb') as f:
-        data = f.read()
-        assert get_int(data[:4]) == 2051
-        length = get_int(data[4:8])
-        num_rows = get_int(data[8:12])
-        num_cols = get_int(data[12:16])
-        parsed = np.frombuffer(data, dtype=np.uint8, offset=16)
-        return torch.from_numpy(parsed).view(length, num_rows, num_cols)
-
-
-def read_label_file(path):
-    with open(path, 'rb') as f:
-        data = f.read()
-        assert get_int(data[:4]) == 2049
-        length = get_int(data[4:8])
-        parsed = np.frombuffer(data, dtype=np.uint8, offset=8)
-        return torch.from_numpy(parsed).view(length).long()
-
-pro=r'/Users/joe/Documents/raw'
-
-training_set = (
-    read_image_file(os.path.join(pro, 'train-images-idx3-ubyte')),
-    read_label_file(os.path.join(pro, 'train-labels-idx1-ubyte'))
-)
-test_set = (
-            read_image_file(os.path.join(pro, 't10k-images-idx3-ubyte')),
-            read_label_file(os.path.join(pro, 't10k-labels-idx1-ubyte'))
-)
-
-with open(os.path.join(pro, 'train.pt'), 'wb') as f:
-    torch.save(training_set, f)
-    '''only torch.load can retrieve the variable, cause the return type are the same 
-    '''
-with open(os.path.join(pro, 'test.pt'), 'wb') as f:
-    torch.save(test_set, f)
-
-data, targets = torch.load(os.path.join(pro, 'train.pt'))
-print(len(data))
-print(len(targets))
-print('end1')
-print(type(training_set[1]))
-print('end2')
+if __name__ == '__main__':
+    main()
